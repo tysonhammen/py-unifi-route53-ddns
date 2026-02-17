@@ -37,6 +37,8 @@ source /usr/local/share/pyuir53ddns/bin/activate
 pip install --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
 ```
 
+If you see `KeyError: 'ROUTE53_MY_DNS_NAME'`, the env file has `ROUTE53_MY_DNS_NAMES` but the device is still running an older build that only reads `ROUTE53_MY_DNS_NAME`. Either upgrade the package (steps above; use `pip install --no-cache-dir --upgrade ...` and then `systemctl restart py-unifi-route53-ddns.timer`) so the new code runs, or add the legacy variable to the env file: `Environment="ROUTE53_MY_DNS_NAME=your.host.example.com"` (one hostname). Then run `systemctl daemon-reload`.
+
 Existing configs that use `ROUTE53_MY_DNS_NAME` (single host) continue to work. For multiple hostnames, set `ROUTE53_MY_DNS_NAMES` (comma-separated) in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf` and run `systemctl daemon-reload`.
 
 ### Monitoring
