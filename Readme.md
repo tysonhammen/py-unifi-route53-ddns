@@ -18,10 +18,10 @@ python3 -m venv /usr/local/share/pyuir53ddns --without-pip
 source /usr/local/share/pyuir53ddns/bin/activate
 wget https://bootstrap.pypa.io/get-pip.py
 python get-pip.py
-pip install https://github.com/cloud-utils/py-unifi-route53-ddns/archive/refs/heads/main.zip
+pip install https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
 py-unifi-route53-ddns install
 ```
-The install script will prompt you for your access key ID, access key, hosted zone domain name, and dynamic hostname to update. These variables will be saved to the systemd service override file in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf`. Other files created by the service are:
+The install script will prompt you for your access key ID, access key, hosted zone domain name, and dynamic hostname(s) to update (comma-separated for multiple entries, e.g. `unifi.example.net, camera.example.net`). These variables will be saved to the systemd service override file in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf`. Other files created by the service are:
 
 * `/etc/systemd/system/py-unifi-route53-ddns.service`
 * `/etc/systemd/system/py-unifi-route53-ddns.timer`
@@ -29,11 +29,21 @@ The install script will prompt you for your access key ID, access key, hosted zo
 
 To remove the service, just delete all of these files.
 
+### Upgrading
+If you see `TypeError: cannot unpack non-iterable NoneType object` (e.g. when the A record does not exist yet in Route53), you are running an older version. Reinstall inside the same virtualenv to get the latest code:
+
+```
+source /usr/local/share/pyuir53ddns/bin/activate
+pip install --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
+```
+
+Existing configs that use `ROUTE53_MY_DNS_NAME` (single host) continue to work. For multiple hostnames, set `ROUTE53_MY_DNS_NAMES` (comma-separated) in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf` and run `systemctl daemon-reload`.
+
 ### Monitoring
 Use `systemctl status py-unifi-route53-ddns.service` or `journalctl -u py-unifi-route53-ddns.service` to see the status and logs of the service.
 
 ### WireGuard VPN configuration
-The UniFi console provides a built-in WireGuard VPN. Navigate to Control Plane -> VPN -> VPN Server -> Create New, configure the server, and check "Use Alternate Address for Clients", then enter the FQDN that you configured as the dynamic hostname above. Any client added after this point (with a QR code or otherwise) will receive this configuration.
+The UniFi console provides a built-in WireGuard VPN. Navigate to Control Plane -> VPN -> VPN Server -> Create New, configure the server, and check "Use Alternate Address for Clients", then enter the FQDN that you configured as the dynamic hostname (or one of them) above. Any client added after this point (with a QR code or otherwise) will receive this configuration.
 
 ### IAM permissions
 Use the visual editor to create a policy with the following permissions:
@@ -67,7 +77,7 @@ Or use the following policy JSON:
 
 ### Bugs
 
-Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/cloud-utils/py-unifi-route53-ddns/issues).
+Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/tysonhammen/py-unifi-route53-ddns/issues).
 
 ### Links
 
