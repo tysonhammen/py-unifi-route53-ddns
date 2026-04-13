@@ -18,7 +18,7 @@ python3 -m venv /usr/local/share/pyuir53ddns --without-pip
 source /usr/local/share/pyuir53ddns/bin/activate
 wget https://bootstrap.pypa.io/get-pip.py
 python get-pip.py
-pip install https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
+pip install --no-cache-dir https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
 py-unifi-route53-ddns install
 ```
 The install script will prompt you for your access key ID, access key, hosted zone domain name, and dynamic hostname(s) to update (comma-separated for multiple entries, e.g. `unifi.example.net, camera.example.net`). These variables will be saved to the systemd service override file in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf`. Other files created by the service are:
@@ -39,13 +39,19 @@ Alternatively, `Environment="ROUTE53_PUBLIC_IP_URL=https://checkip.amazonaws.com
 To remove the service, just delete all of these files.
 
 ### Upgrading
-Upgrade the code inside the same virtualenv, refresh the systemd **service** unit so `systemd` runs the venv **Python** with the **console script path** as an argument (`python3 …/bin/py-unifi-route53-ddns run`). That avoids **203/EXEC** when the wrapper shebang is wrong, and avoids **`No module named py_unifi_route53_ddns.__main__`** when `python -m py_unifi_route53_ddns` was used without that module file in site-packages. Then reload systemd and restart the timer:
+1. **Install the latest package** in the same virtualenv (stay activated so `pip` and the console script come from that venv):
 
 ```
 source /usr/local/share/pyuir53ddns/bin/activate
 pip install --no-cache-dir --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
+```
+
+2. **Rewrite the systemd unit** so `ExecStart` is `venv-python` plus the **console script path** and `run` (same as a fresh `py-unifi-route53-ddns install`). That avoids **203/EXEC** when the wrapper shebang is wrong, and avoids **`No module named py_unifi_route53_ddns.__main__`** if an older guide used `python -m py_unifi_route53_ddns run` without `__main__.py` in site-packages.
+
+```
 PY="$(command -v python3)"
 WR="$(command -v py-unifi-route53-ddns)"
+test -n "${WR}" || { echo "py-unifi-route53-ddns not on PATH; activate the venv first." >&2; exit 1; }
 sudo tee /etc/systemd/system/py-unifi-route53-ddns.service >/dev/null <<EOF
 [Unit]
 Description="py-unifi-route53-ddns"
@@ -57,7 +63,13 @@ systemctl daemon-reload
 systemctl restart py-unifi-route53-ddns.timer
 ```
 
+Optional: run `systemctl start py-unifi-route53-ddns.service` once and check `journalctl -u py-unifi-route53-ddns.service -e` before waiting on the timer.
+
+**Alternative:** From the activated venv, run `py-unifi-route53-ddns install` again; it regenerates `py-unifi-route53-ddns.service` with the correct `ExecStart`. Back up `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf` first if you want to restore it after install re-prompts for AWS credentials.
+
 If you installed the virtualenv somewhere other than `/usr/local/share/pyuir53ddns`, activate that environment first so `command -v python3` and `command -v py-unifi-route53-ddns` resolve inside that venv.
+
+After upgrading, add **WAN / public IP** overrides to `env.conf` if you need them (see **Public IPv4 detection** above), then `systemctl daemon-reload` again.
 
 If you see `TypeError: cannot unpack non-iterable NoneType object` (e.g. when the A record does not exist yet in Route53), you are running an older version; use the block above.
 
