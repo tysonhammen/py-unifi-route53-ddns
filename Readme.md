@@ -23,7 +23,14 @@ py-unifi-route53-ddns install
 ```
 The install script will prompt you for your access key ID, access key, hosted zone domain name, and dynamic hostname(s) to update (comma-separated for multiple entries, e.g. `unifi.example.net, camera.example.net`). These variables will be saved to the systemd service override file in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf`. Other files created by the service are:
 
-**Public IPv4 detection:** The updater compares Route53 to the WAN address seen by a few HTTPS “what is my IP” services (Amazon, ipify, OpenDNS, Cloudflare). On consoles with **multiple WANs or policy routing**, one provider can disagree with the address on your primary WAN; the tool uses a **majority** among successful probes when possible. If you need a specific path or checker, add a line to `env.conf`, for example `Environment="ROUTE53_PUBLIC_IP_URL=https://checkip.amazonaws.com"`, where the URL returns **only** the IPv4 address in the response body (plain text). Then run `systemctl daemon-reload` and restart the timer.
+**Public IPv4 detection:** By default the updater compares Route53 to the address returned by several HTTPS “what is my IP” services (Amazon, ipify, OpenDNS, Cloudflare) and prefers a **majority** when they disagree. On UniFi gateways with **multiple WANs**, outbound HTTPS can still follow a different path than the WAN you want in DNS, and **CGNAT** addresses (e.g. `100.64.0.0/10` on `eth8`) never appear on those sites—only on the interface itself.
+
+To pin the record to a specific WAN, set in `env.conf` (then `systemctl daemon-reload` and restart the timer):
+
+* `Environment="ROUTE53_WAN_INTERFACE=eth8"` — use the first global IPv4 on that interface (typical for WAN2 on many Dream Machine models).
+* Or `Environment="ROUTE53_WAN_INTERFACES=eth9,eth8"` — try each name in order and use the first interface that has a usable IPv4.
+
+Alternatively, `Environment="ROUTE53_PUBLIC_IP_URL=https://checkip.amazonaws.com"` forces a single remote checker whose response body must be **only** the IPv4 in plain text.
 
 * `/etc/systemd/system/py-unifi-route53-ddns.service`
 * `/etc/systemd/system/py-unifi-route53-ddns.timer`

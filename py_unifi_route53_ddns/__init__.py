@@ -3,7 +3,9 @@ import getpass
 import ipaddress
 import logging
 import os
+import re
 import shutil
+import subprocess
 import sys
 from collections import Counter
 
@@ -79,7 +81,73 @@ def _probe_public_ip(url, kind):
     raise ValueError(kind)
 
 
+_IFNAME_RE = re.compile(r"^[A-Za-z0-9._@-]+$")
+
+
+def _ipv4_from_linux_interface(ifname):
+    """Return first usable IPv4 on ifname from `ip -4 addr show` (global preferred)."""
+    if not ifname or not _IFNAME_RE.fullmatch(ifname):
+        raise ValueError(f"Invalid interface name: {ifname!r}")
+    ip_bin = shutil.which("ip") or "/sbin/ip"
+    res = subprocess.run(
+        [ip_bin, "-4", "addr", "show", "dev", ifname],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if res.returncode != 0:
+        logger.warning(
+            "`%s -4 addr show dev %s` failed (%s): %s",
+            ip_bin,
+            ifname,
+            res.returncode,
+            (res.stderr or "").strip(),
+        )
+        return None
+    global_candidates = []
+    other_candidates = []
+    for line in res.stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("inet "):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        host = parts[1].split("/")[0]
+        parsed = _coerce_ipv4(host)
+        if not parsed:
+            continue
+        if "scope" in parts and "global" in parts:
+            global_candidates.append(parsed)
+        else:
+            other_candidates.append(parsed)
+    chosen = (global_candidates or other_candidates or [None])[0]
+    return chosen
+
+
+def _wan_interfaces_from_env():
+    raw = (os.environ.get("ROUTE53_WAN_INTERFACES") or "").strip()
+    if raw:
+        return [p.strip() for p in raw.split(",") if p.strip()]
+    one = (os.environ.get("ROUTE53_WAN_INTERFACE") or "").strip()
+    return [one] if one else []
+
+
 def get_my_ip():
+    wan_ifaces = _wan_interfaces_from_env()
+    for ifname in wan_ifaces:
+        ip = _ipv4_from_linux_interface(ifname)
+        if ip:
+            logger.info("Using IPv4 %s from Linux interface %s (WAN interface mode)", ip, ifname)
+            return ip
+        logger.warning("No usable IPv4 on interface %s", ifname)
+
+    if wan_ifaces:
+        raise RuntimeError(
+            "ROUTE53_WAN_INTERFACE(s) set but no IPv4 found on those interfaces; check names (e.g. eth8, eth9)"
+        )
+
     override = (os.environ.get("ROUTE53_PUBLIC_IP_URL") or "").strip()
     if override:
         ip = _probe_public_ip(override, "plain")
