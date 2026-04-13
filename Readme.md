@@ -39,24 +39,25 @@ Alternatively, `Environment="ROUTE53_PUBLIC_IP_URL=https://checkip.amazonaws.com
 To remove the service, just delete all of these files.
 
 ### Upgrading
-Upgrade the code inside the same virtualenv, refresh the systemd **service** unit (so `systemd` runs the venv Python with `-m py_unifi_route53_ddns run`, which avoids **203/EXEC** / “No such file or directory” when an older unit pointed only at the `py-unifi-route53-ddns` wrapper and the shebang interpreter was wrong), then reload systemd and restart the timer:
+Upgrade the code inside the same virtualenv, refresh the systemd **service** unit so `systemd` runs the venv **Python** with the **console script path** as an argument (`python3 …/bin/py-unifi-route53-ddns run`). That avoids **203/EXEC** when the wrapper shebang is wrong, and avoids **`No module named py_unifi_route53_ddns.__main__`** when `python -m py_unifi_route53_ddns` was used without that module file in site-packages. Then reload systemd and restart the timer:
 
 ```
 source /usr/local/share/pyuir53ddns/bin/activate
 pip install --no-cache-dir --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
 PY="$(command -v python3)"
+WR="$(command -v py-unifi-route53-ddns)"
 sudo tee /etc/systemd/system/py-unifi-route53-ddns.service >/dev/null <<EOF
 [Unit]
 Description="py-unifi-route53-ddns"
 
 [Service]
-ExecStart=${PY} -m py_unifi_route53_ddns run
+ExecStart=${PY} ${WR} run
 EOF
 systemctl daemon-reload
 systemctl restart py-unifi-route53-ddns.timer
 ```
 
-If you installed the virtualenv somewhere other than `/usr/local/share/pyuir53ddns`, activate that environment first so `command -v python3` is the interpreter inside that venv.
+If you installed the virtualenv somewhere other than `/usr/local/share/pyuir53ddns`, activate that environment first so `command -v python3` and `command -v py-unifi-route53-ddns` resolve inside that venv.
 
 If you see `TypeError: cannot unpack non-iterable NoneType object` (e.g. when the A record does not exist yet in Route53), you are running an older version; use the block above.
 

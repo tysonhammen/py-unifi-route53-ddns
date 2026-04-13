@@ -16,7 +16,7 @@ systemd_service = """[Unit]
 Description="py-unifi-route53-ddns"
 
 [Service]
-ExecStart={python} -m py_unifi_route53_ddns run
+ExecStart={python} {wrapper} run
 """
 
 systemd_timer = """[Unit]
@@ -261,13 +261,15 @@ def run():
 def install():
     if not shutil.which("systemctl"):
         parser.exit("systemctl does not appear to be active")
-    if not shutil.which("py-unifi-route53-ddns"):
+    wrapper = shutil.which("py-unifi-route53-ddns")
+    if not wrapper:
         parser.exit("unable to resolve location of py-unifi-route53-ddns")
     logger.info("Installing /etc/systemd/system/py-unifi-route53-ddns.service...")
     with open("/etc/systemd/system/py-unifi-route53-ddns.service", "w") as service_fh:
-        # Use sys.executable + -m so systemd does not rely on the shebang in the
-        # console_scripts wrapper (203/EXEC / ENOENT if the interpreter path is wrong).
-        service_fh.write(systemd_service.format(python=sys.executable))
+        # Run the venv Python with the console script as an argument so systemd never
+        # exec()s the wrapper directly (203/EXEC if the shebang interpreter is wrong)
+        # and we do not require py_unifi_route53_ddns.__main__ in site-packages.
+        service_fh.write(systemd_service.format(python=sys.executable, wrapper=wrapper))
     logger.info("Installing /etc/systemd/system/py-unifi-route53-ddns.timer...")
     with open("/etc/systemd/system/py-unifi-route53-ddns.timer", "w") as timer_fh:
         timer_fh.write(systemd_timer)
