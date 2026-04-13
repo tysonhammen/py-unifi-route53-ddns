@@ -1,9 +1,11 @@
 import argparse
 import getpass
+import ipaddress
 import logging
 import os
 import shutil
 import sys
+from collections import Counter
 
 import boto3
 import urllib3
@@ -42,12 +44,86 @@ parser = argparse.ArgumentParser(prog=__name__)
 parser.add_argument("action", choices=["install", "run"])
 
 
+def _coerce_ipv4(s):
+    if not s:
+        return None
+    try:
+        addr = ipaddress.ip_address(s.strip())
+    except ValueError:
+        return None
+    if not isinstance(addr, ipaddress.IPv4Address):
+        return None
+    if addr.is_loopback or addr.is_unspecified:
+        return None
+    return str(addr)
+
+
+def _ip_from_cloudflare_trace(body):
+    for line in body.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "ip":
+            return _coerce_ipv4(value)
+    return None
+
+
+def _probe_public_ip(url, kind):
+    res = http.request("GET", url, timeout=15.0)
+    if res.status != 200:
+        logger.warning("Probe %s returned HTTP %s", url, res.status)
+        return None
+    text = res.data.decode()
+    if kind == "plain":
+        return _coerce_ipv4(text)
+    if kind == "trace":
+        return _ip_from_cloudflare_trace(text)
+    raise ValueError(kind)
+
+
 def get_my_ip():
-    res = http.request("GET", "https://cloudflare.com/cdn-cgi/trace")
-    for line in res.data.decode().splitlines():
-        data = line.split("=")
-        if data[0] == "ip":
-            return data[1]
+    override = (os.environ.get("ROUTE53_PUBLIC_IP_URL") or "").strip()
+    if override:
+        ip = _probe_public_ip(override, "plain")
+        if not ip:
+            raise RuntimeError(f"ROUTE53_PUBLIC_IP_URL ({override!r}) did not return a usable IPv4 address")
+        logger.info("Using public IPv4 %s from ROUTE53_PUBLIC_IP_URL", ip)
+        return ip
+
+    probes = (
+        ("https://checkip.amazonaws.com", "plain"),
+        ("https://api.ipify.org", "plain"),
+        ("https://ipv4.icanhazip.com", "plain"),
+        ("https://cloudflare.com/cdn-cgi/trace", "trace"),
+    )
+    results = []
+    for url, kind in probes:
+        try:
+            ip = _probe_public_ip(url, kind)
+        except Exception as e:
+            logger.warning("Probe %s failed: %s", url, e)
+            continue
+        if ip:
+            results.append((url, ip))
+
+    if not results:
+        raise RuntimeError("Could not resolve a public IPv4 address from any built-in probe")
+
+    counts = Counter(ip for _, ip in results)
+    top_ip, top_n = counts.most_common(1)[0]
+    if top_n >= 2:
+        logger.info("Resolved public IPv4 as %s (%d of %d probes agreed)", top_ip, top_n, len(results))
+        return top_ip
+
+    chosen_ip, chosen_url = results[0][1], results[0][0]
+    if len(results) == 1:
+        logger.info("Resolved public IPv4 as %s (only %s responded)", chosen_ip, chosen_url)
+    else:
+        logger.warning(
+            "Public IP probes disagreed: %s; using %s from %s (first successful probe)",
+            dict(counts),
+            chosen_ip,
+            chosen_url,
+        )
+    return chosen_ip
 
 
 def get_hosted_zone_id(hosted_zone_dns_name):
