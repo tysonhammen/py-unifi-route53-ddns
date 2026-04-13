@@ -3,6 +3,7 @@ import getpass
 import logging
 import os
 import shutil
+import sys
 
 import boto3
 import urllib3
@@ -11,7 +12,7 @@ systemd_service = """[Unit]
 Description="py-unifi-route53-ddns"
 
 [Service]
-ExecStart={entrypoint} run
+ExecStart={python} -m py_unifi_route53_ddns run
 """
 
 systemd_timer = """[Unit]
@@ -120,7 +121,9 @@ def install():
         parser.exit("unable to resolve location of py-unifi-route53-ddns")
     logger.info("Installing /etc/systemd/system/py-unifi-route53-ddns.service...")
     with open("/etc/systemd/system/py-unifi-route53-ddns.service", "w") as service_fh:
-        service_fh.write(systemd_service.format(entrypoint=shutil.which("py-unifi-route53-ddns")))
+        # Use sys.executable + -m so systemd does not rely on the shebang in the
+        # console_scripts wrapper (203/EXEC / ENOENT if the interpreter path is wrong).
+        service_fh.write(systemd_service.format(python=sys.executable))
     logger.info("Installing /etc/systemd/system/py-unifi-route53-ddns.timer...")
     with open("/etc/systemd/system/py-unifi-route53-ddns.timer", "w") as timer_fh:
         timer_fh.write(systemd_timer)

@@ -30,14 +30,28 @@ The install script will prompt you for your access key ID, access key, hosted zo
 To remove the service, just delete all of these files.
 
 ### Upgrading
-If you see `TypeError: cannot unpack non-iterable NoneType object` (e.g. when the A record does not exist yet in Route53), you are running an older version. Reinstall inside the same virtualenv to get the latest code:
+Upgrade the code inside the same virtualenv, refresh the systemd **service** unit (so `systemd` runs the venv Python with `-m py_unifi_route53_ddns run`, which avoids **203/EXEC** / “No such file or directory” when an older unit pointed only at the `py-unifi-route53-ddns` wrapper and the shebang interpreter was wrong), then reload systemd and restart the timer:
 
 ```
 source /usr/local/share/pyuir53ddns/bin/activate
-pip install --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
+pip install --no-cache-dir --upgrade https://github.com/tysonhammen/py-unifi-route53-ddns/archive/refs/heads/main.zip
+PY="$(command -v python3)"
+sudo tee /etc/systemd/system/py-unifi-route53-ddns.service >/dev/null <<EOF
+[Unit]
+Description="py-unifi-route53-ddns"
+
+[Service]
+ExecStart=${PY} -m py_unifi_route53_ddns run
+EOF
+systemctl daemon-reload
+systemctl restart py-unifi-route53-ddns.timer
 ```
 
-If you see `KeyError: 'ROUTE53_MY_DNS_NAME'`, the env file has `ROUTE53_MY_DNS_NAMES` but the device is still running an older build that only reads `ROUTE53_MY_DNS_NAME`. Either upgrade the package (steps above; use `pip install --no-cache-dir --upgrade ...` and then `systemctl restart py-unifi-route53-ddns.timer`) so the new code runs, or add the legacy variable to the env file: `Environment="ROUTE53_MY_DNS_NAME=your.host.example.com"` (one hostname). Then run `systemctl daemon-reload`.
+If you installed the virtualenv somewhere other than `/usr/local/share/pyuir53ddns`, activate that environment first so `command -v python3` is the interpreter inside that venv.
+
+If you see `TypeError: cannot unpack non-iterable NoneType object` (e.g. when the A record does not exist yet in Route53), you are running an older version; use the block above.
+
+If you see `KeyError: 'ROUTE53_MY_DNS_NAME'`, the env file has `ROUTE53_MY_DNS_NAMES` but the device is still running an older build that only reads `ROUTE53_MY_DNS_NAME`. Either upgrade the package (steps above) so the new code runs, or add the legacy variable to the env file: `Environment="ROUTE53_MY_DNS_NAME=your.host.example.com"` (one hostname). Then run `systemctl daemon-reload`.
 
 Existing configs that use `ROUTE53_MY_DNS_NAME` (single host) continue to work. For multiple hostnames, set `ROUTE53_MY_DNS_NAMES` (comma-separated) in `/etc/systemd/system/py-unifi-route53-ddns.service.d/env.conf` and run `systemctl daemon-reload`.
 
